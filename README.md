@@ -17,10 +17,11 @@ Xtream Codes tabanlı, **Flutter** ile yazılmış bir IPTV oynatıcı. Bilgisay
 | Masaüstü arayüzü (Linux) | ✅ Tamam, kurulu |
 | TV / kumanda desteği (Android TV, Fire/Mi Stick) | ✅ Çalışıyor, gerçek cihazda denendi |
 | Yerel önbellek (hızlı açılış) | ⏳ Sırada |
-| Dizilerde otomatik sonraki bölüm | ⏳ Sırada |
+| Dizilerde otomatik sonraki bölüm (10 sn sayaç, açma/kapama) ve kanal/bölüm geçiş düğmeleri | ✅ Tamam |
 | Gelişmiş arama (Türkçe karakter duyarsız) | ⏳ Sırada |
 | Favori kanalları kendi sıranla dizme | ⏳ Fikir |
-| Windows / macOS / iOS | ❌ Planda yok (iOS için Mac + 99 $/yıl gerekir, vazgeçildi) |
+| macOS | 🧪 Hazırlandı, Mac'te denenmedi (aşağıya bak) |
+| Windows / iOS | ❌ Planda yok (iOS için Mac + 99 $/yıl gerekir, vazgeçildi) |
 
 ---
 
@@ -55,6 +56,7 @@ Xtream Codes tabanlı, **Flutter** ile yazılmış bir IPTV oynatıcı. Bilgisay
 - Klavye: `Boşluk`, `←/→`, `↑/↓`, `M`, `F`, `Esc`; medya tuşları.
 
 ### Arayüz ve TV
+- **Telefonu kumanda yapma** (Ayarlar → Telefonu kumanda yap): QR'ı telefonla okutursun, tarayıcıda yön tuşları, OK, geri, oynat/duraklat, sarma, sessiz, tam ekran ve **yazı yazma** (seçili kutuya, arama dahil) çıkar. Yalnızca yerel ağda, rastgele adres, varsayılan kapalı.
 - **Arayüz ölçeği** (%50–%140), TV'de varsayılan %70.
 - **Kumanda (TV) modu:** belirgin odak çerçevesi, kumandayla gezinme, metin alanlarına **OK ile giriş** (ekran klavyesi odak gelince kendiliğinden açılmaz), oynatıcıda "video modu / çubuk modu".
 - Fare üstüne gelince büyüyen kartlar, ortak afiş bileşeni.
@@ -81,6 +83,15 @@ flutter build linux --release
 ./linux/packaging/install.sh
 ```
 
+**macOS** (yalnızca Mac'te derlenir; Xcode ve Flutter kurulu olmalı):
+
+```bash
+flutter build macos --release
+open build/macos/Build/Products/Release/iptv_app.app
+```
+
+Mac'in yoksa GitHub'daki **Actions → macOS build** işi uygulamayı derleyip `iptv-macos` zip'i olarak verir. İmzasız olduğu için ilk açılışta Finder'da sağ tık → Aç demek gerekir.
+
 **Android TV / stick** (cihazda geliştirici seçenekleri ve USB hata ayıklama açık olmalı):
 
 ```bash
@@ -92,7 +103,7 @@ adb install -r build/app/outputs/flutter-apk/app-release.apk
 
 ```bash
 flutter analyze
-flutter test      # 39 test
+flutter test      # 48 test
 ```
 
 ---
@@ -128,7 +139,7 @@ linux/packaging/             install.sh, uygulama ikonu
 - Liste her açılışta sunucudan iniyor (yerel önbellek yok); 1 GB'lık stick'te büyük listeler yavaş açılabilir.
 - Dizilerde bir sonraki bölüme **otomatik geçiş yok**.
 - Arama düz "içerir" araması (Türkçe karakterleri ayırt eder).
-- TV'de kumandayla parola yazmak zahmetli: QR ile girişi kullan.
+- TV'de kumandayla parola yazmak zahmetli: QR ile girişi ya da telefon kumandasını kullan.
 - `mpv` sistemde kurulu olmalı (Linux).
 - Kumanda desteği Xiaomi Mi TV Stick'te denendi; diğer TV cihazlarında ayar gerekebilir.
 

@@ -9,7 +9,8 @@ import 'xtream.dart';
 /// If no keyring is available the app falls back to plain preferences so login still works.
 class AccountStore {
   static const _key = 'accounts';
-  static const _secure = FlutterSecureStorage();
+  // macOS: the legacy keychain works without a provisioning profile / keychain-access-groups entitlement.
+  static const _secure = FlutterSecureStorage(mOptions: MacOsOptions(usesDataProtectionKeychain: false));
 
   static List<Account> _parse(String raw) {
     try {

@@ -89,14 +89,31 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _playLive(Item item) {
-    final id = item.streamId;
+    // Next/previous channel follows the list the user is looking at (category + search).
+    List<Item> list = [item];
+    if (_kind == Kind.live) {
+      final q = _query.toLowerCase();
+      list = (_items[Kind.live] ?? const <Item>[]).where(_allowed).where((i) => (_group == null || i.group == _group) && (q.isEmpty || i.name.toLowerCase().contains(q))).toList();
+    } else if (_tab == _favoritesTab) {
+      list = Library.instance.favorites.where(_allowed).where((i) => i.kind == Kind.live).toList();
+    }
+    var index = list.indexWhere((i) => i.id == item.id);
+    if (index < 0) {
+      list = [item];
+      index = 0;
+    }
+    PlayerEntry entry(Item i) {
+      final id = i.streamId;
+      return PlayerEntry(url: i.url!, title: i.name, logo: i.logo, epg: id == null ? null : () => _epg.get(id));
+    }
+
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => PlayerPage(url: item.url!, title: item.name, logo: item.logo, kind: Kind.live, epg: id == null ? null : () => _epg.get(id), client: widget.client),
+      builder: (_) => PlayerPage(queue: [for (final i in list) entry(i)], index: index, kind: Kind.live, client: widget.client),
     ));
   }
 
   void _openHistory(HistoryEntry e) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlayerPage(url: e.url, title: e.title, logo: e.logo, kind: e.kind, client: widget.client)));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlayerPage(queue: [PlayerEntry(url: e.url, title: e.title, logo: e.logo)], kind: e.kind, client: widget.client)));
   }
 
   bool _allowed(Item i) {

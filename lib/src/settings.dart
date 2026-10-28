@@ -18,7 +18,9 @@ class AppSettings extends ChangeNotifier {
   int skipSecs = 10;
   bool hideAdult = false;
   bool resume = true;
+  bool autoNext = true; // start the next episode 10 s after one ends
   bool dedupe = true;
+  bool phoneRemote = false; // control the app from a phone's browser (local network)
   bool tvMode = !kIsWeb && Platform.isAndroid; // remote-control friendly UI
   double uiScale = !kIsWeb && Platform.isAndroid ? 0.7 : 1.0; // whole-UI zoom
   Set<String> hiddenGroups = {}; // "kind:group"
@@ -33,7 +35,9 @@ class AppSettings extends ChangeNotifier {
     skipSecs = p.getInt('skipSecs') ?? skipSecs;
     hideAdult = p.getBool('hideAdult') ?? hideAdult;
     resume = p.getBool('resume') ?? resume;
+    autoNext = p.getBool('autoNext') ?? autoNext;
     dedupe = p.getBool('dedupe') ?? dedupe;
+    phoneRemote = p.getBool('phoneRemote') ?? phoneRemote;
     tvMode = p.getBool('tvMode') ?? tvMode;
     uiScale = p.getDouble('uiScale') ?? uiScale;
     hiddenGroups = (p.getStringList('hiddenGroups') ?? const <String>[]).toSet();
@@ -48,7 +52,7 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> update({String? audioLang, String? subLang, bool? hwdec, int? cacheSecs, int? skipSecs, bool? hideAdult, bool? resume, bool? dedupe, bool? tvMode, double? uiScale, Set<String>? hiddenGroups, Map<String, List<String>>? groupOrder}) async {
+  Future<void> update({String? audioLang, String? subLang, bool? hwdec, int? cacheSecs, int? skipSecs, bool? hideAdult, bool? resume, bool? autoNext, bool? dedupe, bool? tvMode, bool? phoneRemote, double? uiScale, Set<String>? hiddenGroups, Map<String, List<String>>? groupOrder}) async {
     this.audioLang = audioLang ?? this.audioLang;
     this.subLang = subLang ?? this.subLang;
     this.hwdec = hwdec ?? this.hwdec;
@@ -56,8 +60,10 @@ class AppSettings extends ChangeNotifier {
     this.skipSecs = skipSecs ?? this.skipSecs;
     this.hideAdult = hideAdult ?? this.hideAdult;
     this.resume = resume ?? this.resume;
+    this.autoNext = autoNext ?? this.autoNext;
     this.dedupe = dedupe ?? this.dedupe;
     this.tvMode = tvMode ?? this.tvMode;
+    this.phoneRemote = phoneRemote ?? this.phoneRemote;
     this.uiScale = uiScale ?? this.uiScale;
     this.hiddenGroups = hiddenGroups ?? this.hiddenGroups;
     this.groupOrder = groupOrder ?? this.groupOrder;
@@ -70,8 +76,10 @@ class AppSettings extends ChangeNotifier {
     await p.setInt('skipSecs', this.skipSecs);
     await p.setBool('hideAdult', this.hideAdult);
     await p.setBool('resume', this.resume);
+    await p.setBool('autoNext', this.autoNext);
     await p.setBool('dedupe', this.dedupe);
     await p.setBool('tvMode', this.tvMode);
+    await p.setBool('phoneRemote', this.phoneRemote);
     await p.setDouble('uiScale', this.uiScale);
     await p.setStringList('hiddenGroups', this.hiddenGroups.toList());
     await p.setString('groupOrder', jsonEncode(this.groupOrder));

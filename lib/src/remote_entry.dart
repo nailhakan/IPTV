@@ -9,9 +9,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 /// on a phone/PC, types the login there and it is sent back, so nothing has to be typed with a remote.
 class RemoteEntryServer {
   HttpServer? _server;
-  final String token = _randomToken();
+  final String token = newToken();
 
-  static String _randomToken() {
+  static String newToken() {
     const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
     final r = Random.secure();
     return List.generate(10, (_) => chars[r.nextInt(chars.length)]).join();

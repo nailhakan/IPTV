@@ -3,8 +3,10 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'src/app_nav.dart';
 import 'src/library.dart';
 import 'src/login_page.dart';
+import 'src/phone_remote.dart';
 import 'src/ui_scale.dart';
 import 'src/settings.dart';
 
@@ -18,6 +20,7 @@ Future<void> main() async {
       ..maximumSize = 120;
   }
   await Future.wait([AppSettings.instance.load(), Library.instance.load()]);
+  if (AppSettings.instance.phoneRemote) PhoneRemote.instance.setEnabled(true);
   runApp(const IptvApp());
 }
 
@@ -37,6 +40,7 @@ class IptvApp extends StatelessWidget {
         final focusStyle = ButtonStyle(overlayColor: focusOverlay, side: focusSide);
         return MaterialApp(
           title: 'IPTV',
+          navigatorKey: appNavigatorKey,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             colorScheme: scheme,

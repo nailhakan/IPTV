@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:qr_flutter/qr_flutter.dart';
+
+import 'phone_remote.dart';
 import 'settings.dart';
 import 'xtream.dart';
 
@@ -15,7 +18,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppSettings.instance;
     return ListenableBuilder(
-      listenable: s,
+      listenable: Listenable.merge([s, PhoneRemote.instance]),
       builder: (context, _) {
         final exp = info.expiry;
         return ListView(
@@ -74,6 +77,13 @@ class SettingsPage extends StatelessWidget {
                 value: s.resume,
                 onChanged: (v) => s.update(resume: v),
               ),
+              SwitchListTile(
+                secondary: const Icon(Icons.skip_next),
+                title: const Text('Sonraki bölümü otomatik oynat'),
+                subtitle: const Text('Bölüm bitince 10 saniye sayar, sonra sıradaki bölüme geçer'),
+                value: s.autoNext,
+                onChanged: (v) => s.update(autoNext: v),
+              ),
             ]),
             _Section('İçerik', [
               SwitchListTile(
@@ -96,6 +106,19 @@ class SettingsPage extends StatelessWidget {
                 subtitle: Text(s.hiddenGroups.isEmpty ? 'Yok. Bir kategoriyi gizlemek için listenin üstündeki ayar ikonunu kullan.' : '${s.hiddenGroups.length} kategori gizli'),
                 trailing: s.hiddenGroups.isEmpty ? null : TextButton(onPressed: () => s.update(hiddenGroups: <String>{}), child: const Text('Hepsini göster')),
               ),
+            ]),
+            _Section('Telefonu kumanda yap', [
+              SwitchListTile(
+                secondary: const Icon(Icons.phone_android),
+                title: const Text('Telefonla kumanda et'),
+                subtitle: const Text('Telefonun tarayıcısından yön tuşları, oynat/duraklat, sarma ve yazı yazma. Yalnızca aynı Wi-Fi/ağda çalışır.'),
+                value: s.phoneRemote,
+                onChanged: (v) {
+                  s.update(phoneRemote: v);
+                  PhoneRemote.instance.setEnabled(v);
+                },
+              ),
+              if (s.phoneRemote) _PhoneRemoteInfo(remote: PhoneRemote.instance),
             ]),
             _Section('Görünüm', [
               _Choice<double>(
@@ -215,6 +238,37 @@ class _ConnectionTileState extends State<_ConnectionTile> {
       title: const Text('Eşzamanlı bağlantılar'),
       subtitle: Text(_error ?? (i.limitReached ? '$text. Sınır dolu: başka bir cihazda izleme açık olabilir.' : text)),
       trailing: _busy ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)) : IconButton(tooltip: 'Yenile', icon: const Icon(Icons.refresh), onPressed: _refresh),
+    );
+  }
+}
+
+/// QR code + address of the phone remote page.
+class _PhoneRemoteInfo extends StatelessWidget {
+  const _PhoneRemoteInfo({required this.remote});
+
+  final PhoneRemote remote;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = remote.url;
+    if (url == null) {
+      return ListTile(leading: const Icon(Icons.error_outline), title: Text(remote.error ?? 'Başlatılıyor...'));
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: Row(children: [
+        Container(color: Colors.white, padding: const EdgeInsets.all(8), child: QrImageView(data: url.toString(), size: 150, backgroundColor: Colors.white)),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Telefonun kamerasıyla okut'),
+            const SizedBox(height: 6),
+            SelectableText(url.toString(), style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 6),
+            const Text('Bu adres uygulama her açıldığında değişir. Kumandayı açık bırakmak istemezsen anahtarı kapat.', style: TextStyle(fontSize: 11)),
+          ]),
+        ),
+      ]),
     );
   }
 }

@@ -9,16 +9,25 @@ import 'library.dart';
 import 'settings.dart';
 import 'xtream.dart';
 
-class PlayerPage extends StatefulWidget {
-  const PlayerPage({super.key, required this.url, required this.title, this.logo = '', this.kind = Kind.movie, this.epg, this.client});
+/// One playable thing: a channel, a movie or an episode.
+class PlayerEntry {
+  const PlayerEntry({required this.url, required this.title, this.logo = '', this.epg});
 
   final String url;
   final String title;
   final String logo;
-  final Kind kind;
 
   /// Loads now/next programmes (live channels only).
   final Future<List<Programme>> Function()? epg;
+}
+
+class PlayerPage extends StatefulWidget {
+  const PlayerPage({super.key, required this.queue, this.index = 0, this.kind = Kind.movie, this.client});
+
+  /// What can be reached with next/previous (channels of the list, episodes of the series). [index] is the one to start.
+  final List<PlayerEntry> queue;
+  final int index;
+  final Kind kind;
 
   /// Used to tell "connection limit reached" apart from other failures.
   final XtreamClient? client;
@@ -36,12 +45,21 @@ class _PlayerPageState extends State<PlayerPage> {
   final ValueNotifier<String?> _error = ValueNotifier(null);
   final List<StreamSubscription<dynamic>> _subs = [];
   int _retries = 0;
+  int _gen = 0; // bumped on every channel/episode change so stale retries are dropped
+  late int _index = widget.index;
   Future<List<Programme>>? _epg;
+  late final ValueNotifier<PlayerEntry> _current = ValueNotifier(_entry);
+  final ValueNotifier<int?> _countdown = ValueNotifier(null); // seconds until the next episode starts
+  Timer? _countdownTimer;
+
+  PlayerEntry get _entry => widget.queue[_index];
+  bool get _hasNext => _index < widget.queue.length - 1;
+  bool get _hasPrev => _index > 0;
 
   @override
   void initState() {
     super.initState();
-    _epg = widget.epg?.call();
+    _epg = _entry.epg?.call();
     // The lists behind the player hold decoded posters; release them while a video plays.
     PaintingBinding.instance.imageCache
       ..clear()
@@ -77,7 +95,7 @@ class _PlayerPageState extends State<PlayerPage> {
       await set('sid', 'auto');
     }
 
-    Library.instance.touch(url: widget.url, title: widget.title, logo: widget.logo, kind: widget.kind);
+    Library.instance.touch(url: _entry.url, title: _entry.title, logo: _entry.logo, kind: widget.kind);
 
     _subs.add(_player.stream.error.listen(_onError));
     _subs.add(_player.stream.playing.listen((playing) {
@@ -91,23 +109,76 @@ class _PlayerPageState extends State<PlayerPage> {
       _subs.add(_player.stream.completed.listen((done) {
         if (done) _onError('stream ended');
       }));
+    } else {
+      _subs.add(_player.stream.completed.listen((done) {
+        if (done) _onCompleted();
+      }));
     }
 
     await _open();
-
-    if (!widget.live) {
-      if (s.resume) {
-        final saved = Library.instance.positionFor(widget.url);
-        if (saved != null) {
-          await _player.stream.duration.firstWhere((d) => d > Duration.zero);
-          await _player.seek(saved);
-        }
-      }
-      _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _save());
-    }
+    await _afterOpen();
   }
 
-  Future<void> _open() => _player.open(Media(widget.url, httpHeaders: const {'User-Agent': 'VLC/3.0.20 LibVLC/3.0.20'}));
+  Future<void> _afterOpen() async {
+    if (widget.live) return;
+    final gen = _gen;
+    if (AppSettings.instance.resume) {
+      final saved = Library.instance.positionFor(_entry.url);
+      if (saved != null) {
+        await _player.stream.duration.firstWhere((d) => d > Duration.zero);
+        if (gen != _gen || !mounted) return;
+        await _player.seek(saved);
+      }
+    }
+    _saveTimer?.cancel();
+    _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _save());
+  }
+
+  Future<void> _open() => _player.open(Media(_entry.url, httpHeaders: const {'User-Agent': 'VLC/3.0.20 LibVLC/3.0.20'}));
+
+  /// Moves to another channel/episode of the queue without leaving the player.
+  Future<void> _switchTo(int i) async {
+    if (i < 0 || i >= widget.queue.length || i == _index) return;
+    _cancelCountdown();
+    _saveTimer?.cancel();
+    _save();
+    _gen++;
+    _retries = 0;
+    _error.value = null;
+    _index = i;
+    final e = _entry;
+    _epg = e.epg?.call();
+    _current.value = e;
+    Library.instance.touch(url: e.url, title: e.title, logo: e.logo, kind: widget.kind);
+    await _open();
+    if (mounted) await _afterOpen();
+  }
+
+  void _next() => _switchTo(_index + 1);
+  void _prev() => _switchTo(_index - 1);
+
+  /// An episode ended: count down 10 s (like YouTube's autoplay) and then start the next one.
+  void _onCompleted() {
+    if (!mounted) return;
+    _save();
+    if (!AppSettings.instance.autoNext || !_hasNext) return;
+    _countdownTimer?.cancel();
+    _countdown.value = 10;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      final left = (_countdown.value ?? 1) - 1;
+      if (left <= 0) {
+        _next();
+      } else {
+        _countdown.value = left;
+      }
+    });
+  }
+
+  void _cancelCountdown() {
+    _countdownTimer?.cancel();
+    _countdownTimer = null;
+    _countdown.value = null;
+  }
 
   Future<AccountInfo?> _accountInfo() async {
     try {
@@ -128,8 +199,9 @@ class _PlayerPageState extends State<PlayerPage> {
         // The server may still count our own dropped connection for a few seconds: wait and retry.
         _retries++;
         _error.value = 'Bağlantı sınırı dolu ($n). Başka bir cihazda izleme açık olabilir ya da önceki bağlantın henüz kapanmadı. Yeniden deneniyor ($_retries/3)...';
+        final gen = _gen;
         Future.delayed(Duration(seconds: 4 * _retries), () {
-          if (mounted) _open();
+          if (mounted && gen == _gen) _open();
         });
         return;
       }
@@ -140,8 +212,9 @@ class _PlayerPageState extends State<PlayerPage> {
     if (widget.live && _retries < 3) {
       _retries++;
       _error.value = 'Bağlantı koptu, yeniden deneniyor ($_retries/3)...';
+      final gen = _gen;
       Future.delayed(Duration(seconds: 2 * _retries), () {
-        if (mounted) _open();
+        if (mounted && gen == _gen) _open();
       });
       return;
     }
@@ -159,17 +232,20 @@ class _PlayerPageState extends State<PlayerPage> {
 
   void _save() {
     if (widget.live) return;
-    Library.instance.savePosition(widget.url, _player.state.position, _player.state.duration);
+    Library.instance.savePosition(_entry.url, _player.state.position, _player.state.duration);
   }
 
   @override
   void dispose() {
     _saveTimer?.cancel();
+    _countdownTimer?.cancel();
     for (final sub in _subs) {
       sub.cancel();
     }
     _save();
     _error.dispose();
+    _current.dispose();
+    _countdown.dispose();
     _player.dispose();
     super.dispose();
   }
@@ -180,7 +256,24 @@ class _PlayerPageState extends State<PlayerPage> {
       backgroundColor: Colors.black,
       body: Video(
         controller: _controller,
-        controls: (state) => _Controls(state: state, player: _player, title: widget.title, live: widget.live, error: _error, onRetry: _retry, epg: _epg),
+        controls: (state) => ValueListenableBuilder<PlayerEntry>(
+          valueListenable: _current,
+          builder: (_, entry, _) => _Controls(
+            state: state,
+            player: _player,
+            title: entry.title,
+            live: widget.live,
+            error: _error,
+            onRetry: _retry,
+            epg: entry.epg == null ? null : _epg,
+            onPrev: _hasPrev ? _prev : null,
+            onNext: _hasNext ? _next : null,
+            queued: widget.queue.length > 1,
+            countdown: _countdown,
+            nextTitle: _hasNext ? widget.queue[_index + 1].title : null,
+            onCancelCountdown: _cancelCountdown,
+          ),
+        ),
       ),
     );
   }
@@ -200,7 +293,21 @@ String _trackLabel(String id, String? title, String? language) {
 }
 
 class _Controls extends StatefulWidget {
-  const _Controls({required this.state, required this.player, required this.title, required this.live, required this.error, required this.onRetry, this.epg});
+  const _Controls({
+    required this.state,
+    required this.player,
+    required this.title,
+    required this.live,
+    required this.error,
+    required this.onRetry,
+    required this.countdown,
+    required this.onCancelCountdown,
+    this.epg,
+    this.onPrev,
+    this.onNext,
+    this.queued = false,
+    this.nextTitle,
+  });
 
   final VideoState state;
   final Player player;
@@ -209,6 +316,12 @@ class _Controls extends StatefulWidget {
   final ValueNotifier<String?> error;
   final VoidCallback onRetry;
   final Future<List<Programme>>? epg;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+  final bool queued; // more than one channel/episode to move between
+  final ValueNotifier<int?> countdown;
+  final String? nextTitle;
+  final VoidCallback onCancelCountdown;
 
   @override
   State<_Controls> createState() => _ControlsState();
@@ -365,6 +478,23 @@ class _ControlsState extends State<_Controls> {
       return KeyEventResult.handled;
     }
 
+    if (k == LogicalKeyboardKey.mediaTrackNext || k == LogicalKeyboardKey.channelUp || k == LogicalKeyboardKey.pageDown) {
+      if (widget.onNext == null) return KeyEventResult.ignored;
+      widget.onNext!();
+      _poke();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.mediaTrackPrevious || k == LogicalKeyboardKey.channelDown || k == LogicalKeyboardKey.pageUp) {
+      if (widget.onPrev == null) return KeyEventResult.ignored;
+      widget.onPrev!();
+      _poke();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape && widget.countdown.value != null) {
+      widget.onCancelCountdown();
+      return KeyEventResult.handled;
+    }
+
     final isSelect = k == LogicalKeyboardKey.select || k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter;
 
     if (_tv) {
@@ -499,6 +629,33 @@ class _ControlsState extends State<_Controls> {
               duration: const Duration(milliseconds: 150),
               child: _visible ? KeyedSubtree(key: const ValueKey('chrome'), child: _chrome(context)) : const SizedBox.expand(key: ValueKey('hidden')),
             ),
+            ValueListenableBuilder<int?>(
+              valueListenable: widget.countdown,
+              builder: (_, left, _) {
+                if (left == null) return const SizedBox.shrink();
+                return Align(
+                  alignment: Alignment.bottomRight,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 24, 110),
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 340),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white24)),
+                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Sıradaki bölüm $left sn içinde başlıyor', style: Theme.of(context).textTheme.titleSmall),
+                        if (widget.nextTitle != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(widget.nextTitle!, maxLines: 2, overflow: TextOverflow.ellipsis)),
+                        const SizedBox(height: 12),
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          FilledButton(autofocus: true, onPressed: widget.onNext, child: const Text('Şimdi oynat')),
+                          const SizedBox(width: 8),
+                          TextButton(onPressed: widget.onCancelCountdown, child: const Text('İptal')),
+                        ]),
+                      ]),
+                    ),
+                  ),
+                );
+              },
+            ),
           ]),
         ),
       ),
@@ -542,10 +699,14 @@ class _ControlsState extends State<_Controls> {
           child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
           child: Row(children: [
+            if (widget.queued)
+              IconButton(tooltip: widget.live ? 'Önceki kanal' : 'Önceki bölüm', iconSize: 28, icon: const Icon(Icons.skip_previous), onPressed: widget.onPrev),
             StreamBuilder<bool>(
               stream: p.stream.playing,
               builder: (_, s) => IconButton(focusNode: _playNode, iconSize: 32, icon: Icon((s.data ?? p.state.playing) ? Icons.pause : Icons.play_arrow), onPressed: p.playOrPause),
             ),
+            if (widget.queued)
+              IconButton(tooltip: widget.live ? 'Sonraki kanal' : 'Sonraki bölüm', iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: widget.onNext),
             if (!widget.live) ...[
               IconButton(icon: const Icon(Icons.replay_10), onPressed: () => _seekBy(-_skip)),
               IconButton(icon: const Icon(Icons.forward_10), onPressed: () => _seekBy(_skip)),
@@ -563,6 +724,22 @@ class _ControlsState extends State<_Controls> {
               },
             ),
             const Spacer(),
+            if (!widget.live && widget.queued)
+              ListenableBuilder(
+                listenable: AppSettings.instance,
+                builder: (_, _) {
+                  final on = AppSettings.instance.autoNext;
+                  return IconButton(
+                    tooltip: 'Sonraki bölümü otomatik oynat: ${on ? 'açık' : 'kapalı'}',
+                    icon: Icon(on ? Icons.toggle_on : Icons.toggle_off, size: 34, color: on ? Theme.of(context).colorScheme.primary : null),
+                    onPressed: () {
+                      AppSettings.instance.update(autoNext: !on);
+                      if (on) widget.onCancelCountdown();
+                      _flash('Otomatik sonraki bölüm: ${on ? 'kapalı' : 'açık'}');
+                    },
+                  );
+                },
+              ),
             if (!widget.live)
               StreamBuilder<double>(
                 stream: p.stream.rate,

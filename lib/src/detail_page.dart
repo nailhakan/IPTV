@@ -32,9 +32,9 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
-  void _play(String url, String title, {String? logo}) {
+  void _play(List<PlayerEntry> queue, int index) {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => PlayerPage(url: url, title: title, logo: logo ?? widget.item.logo, kind: widget.item.kind == Kind.live ? Kind.live : widget.item.kind, client: widget.client),
+      builder: (_) => PlayerPage(queue: queue, index: index, kind: widget.item.kind, client: widget.client),
     ));
   }
 
@@ -105,7 +105,7 @@ class _DetailPageState extends State<DetailPage> {
                         FilledButton.icon(
                           icon: const Icon(Icons.play_arrow),
                           label: Text(resume == null ? 'Oynat' : 'Devam et (${_fmt(resume)})'),
-                          onPressed: () => _play(widget.item.url!, widget.item.name),
+                          onPressed: () => _play([PlayerEntry(url: widget.item.url!, title: widget.item.name, logo: widget.item.logo)], 0),
                         ),
                       OutlinedButton.icon(
                         icon: Icon(fav ? Icons.favorite : Icons.favorite_border, color: fav ? Colors.redAccent : null),
@@ -138,6 +138,18 @@ class _DetailPageState extends State<DetailPage> {
       seasons.putIfAbsent(e.season, () => []).add(e);
     }
     String two(int n) => n.toString().padLeft(2, '0');
+    // Everything in the order shown, so the player can move on to the next episode (and into the next season).
+    final queue = <PlayerEntry>[
+      for (final s in seasons.entries)
+        for (final e in s.value)
+          PlayerEntry(url: e.url, title: '${widget.item.name} S${two(s.key)}E${two(e.number)}', logo: e.image.isNotEmpty ? e.image : widget.item.logo),
+    ];
+    final position = <Episode, int>{};
+    for (final s in seasons.values) {
+      for (final e in s) {
+        position[e] = position.length;
+      }
+    }
 
     return [
       const SizedBox(height: 28),
@@ -163,7 +175,7 @@ class _DetailPageState extends State<DetailPage> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                onTap: () => _play(e.url, '${widget.item.name} S${two(s.key)}E${two(e.number)}', logo: e.image.isNotEmpty ? e.image : widget.item.logo),
+                onTap: () => _play(queue, position[e]!),
               ),
           ],
         ),
